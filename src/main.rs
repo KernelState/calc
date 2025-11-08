@@ -1,11 +1,10 @@
 mod lexer;
 mod parser;
 
-use gtk::{Application, ApplicationWindow, Button, Grid, Label};
-use gtk::{Box as GBox, prelude::*};
+use gtk::{Application, ApplicationWindow, Button, CssProvider, Grid, Label, StyleContext};
+use gtk::{Box as GBox, gdk::Screen as GScreen, prelude::*};
 use lexer::Lexer;
 use std::cell::RefCell;
-use std::fmt::Display;
 use std::rc::Rc;
 
 fn compute(input: String) -> Result<f64, parser::ParseError> {
@@ -22,6 +21,8 @@ fn main() {
         .build();
 
     app.connect_activate(|app| {
+        let css_provider = CssProvider::new();
+        css_provider.load_from_path("style.css").unwrap();
         // Shared input
         let input = Rc::new(RefCell::new(String::new()));
 
@@ -31,6 +32,7 @@ fn main() {
             .default_width(200)
             .default_height(300)
             .title("TESTING")
+            .resizable(false)
             .build();
 
         let contents = GBox::new(gtk::Orientation::Vertical, 10);
@@ -44,8 +46,8 @@ fn main() {
 
         // Grid layout
         let grid = Grid::new();
-        grid.set_row_spacing(5);
-        grid.set_column_spacing(5);
+        grid.set_row_spacing(10);
+        grid.set_column_spacing(10);
 
         contents.pack_start(&grid, true, true, 10);
 
@@ -64,6 +66,23 @@ fn main() {
         for (row_idx, row) in labels.iter().enumerate() {
             for (col_idx, &label) in row.iter().enumerate() {
                 let button = Button::with_label(label);
+
+                let button_sc = button.style_context();
+
+                match label {
+                    "AC" => button_sc.add_class("clear"),
+                    "=" => button.set_widget_name("equal"),
+                    "+" | "-" | "*" | "/" | "%" => button_sc.add_class("operator"),
+                    _ => button_sc.add_class("normal"),
+                }
+
+                if let Some(screen) = GScreen::default() {
+                    StyleContext::add_provider_for_screen(
+                        &screen,
+                        &css_provider,
+                        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                    );
+                }
 
                 // Clone Rc for this button
                 let input_clone = Rc::clone(&input);

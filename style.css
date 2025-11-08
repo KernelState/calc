@@ -1,0 +1,61 @@
+window {
+	background-color: #02040F;
+	/* Rich black */
+	color: #E0E0E0;
+	/* Light gray */
+}
+
+button {
+	all: unset;
+	border-radius: 10px;
+	padding: 10px 20px;
+	border: none;
+	transition: background-color 0.3s ease;
+}
+
+button.normal {
+	background-color: rgb(50, 50, 50);
+	color: #E0E0E0;
+}
+
+button.normal:hover {
+	background-color: rgb(80, 80, 80);
+}
+
+label {
+	font-size: 24px;
+	font-weight: bold;
+}
+
+button.clear {
+	background-color: rgb(210, 59, 48);
+	/* Red */
+	color: #FFFFFF;
+}
+
+button.clear:hover {
+	background-color: rgb(225, 69, 58);
+}
+
+button.equal {
+	background-color: rgb(58, 69, 210);
+	color: #FFFFFF;
+}
+
+button.equal:hover {
+	background-color: rgb(58, 69, 220);
+}
+
+button.operator {
+	background-color: rgb(100, 100, 100);
+	/* lighter gray */
+	color: #FFFFFF;
+}
+
+button.operator:hover {
+	background-color: rgb(130, 130, 130);
+}
+
+grid {
+	padding: 20px;
+}
