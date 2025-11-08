@@ -29,8 +29,8 @@ fn main() {
         // Create window
         let window = ApplicationWindow::builder()
             .application(app)
-            .default_width(200)
-            .default_height(300)
+            .default_width(300)
+            .default_height(400)
             .title("TESTING")
             .resizable(false)
             .build();
@@ -67,12 +67,17 @@ fn main() {
             for (col_idx, &label) in row.iter().enumerate() {
                 let button = Button::with_label(label);
 
+                if (label == "%") {
+                    button.set_sensitive(false);
+                }
+
                 let button_sc = button.style_context();
 
                 match label {
                     "AC" => button_sc.add_class("clear"),
                     "=" => button.set_widget_name("equal"),
                     "+" | "-" | "*" | "/" | "%" => button_sc.add_class("operator"),
+                    "%" => button_sc.add_class("disabled"),
                     _ => button_sc.add_class("normal"),
                 }
 
