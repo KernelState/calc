@@ -1,9 +1,9 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Plus,
     Minus,
-    Div,
     Mul,
+    Div,
     OBrkt,
     CBrkt,
     Number(f64),
@@ -12,77 +12,62 @@ pub enum Token {
 #[derive(Debug, Clone)]
 pub struct Lexer {
     pub input: String,
-    pub idx: usize,
-    pub ch: char,
     pub toks: Vec<Token>,
-    pub lexed: bool,
-    buf: String,
 }
 
 impl Lexer {
     pub fn from_string(input: String) -> Self {
         Self {
-            input: input,
-            idx: 0,
-            lexed: false,
-            toks: Vec::<Token>::new(),
-            ch: ' ',
-            buf: String::new(),
+            input,
+            toks: Vec::new(),
         }
     }
-    pub fn next(&mut self) {
-        if self.idx > self.input.len() {
-            self.lexed = true;
-        } else {
-            self.ch = self.input.chars().nth(self.idx).unwrap();
-            if self.ch.is_ascii_whitespace() {
-                self.next()
-            }
-            if self.ch.is_ascii_digit() {
-                self.buf.push(self.ch);
-                self.idx += 1;
-                while self.idx < self.input.len() {
-                    let next_ch = self.input.chars().nth(self.idx).unwrap();
-                    if next_ch.is_ascii_digit() {
-                        self.buf.push(next_ch);
-                        self.idx += 1;
-                    } else {
-                        break;
-                    }
-                }
-                let number = self.buf.parse::<f64>().unwrap();
-                self.toks.push(Token::Number(number));
-                self.buf.clear();
-                return;
-            }
-        }
-    }
-    pub fn ch_into(&mut self) {
-        self.next();
-        match self.ch {
-            '+' => self.toks.push(Token::Plus),
-            '-' => self.toks.push(Token::Minus),
-            '/' => self.toks.push(Token::Div),
-            '*' => self.toks.push(Token::Mul),
-            '(' => self.toks.push(Token::OBrkt),
-            ')' => self.toks.push(Token::CBrkt),
-            _ => {
-                if self.ch.is_ascii_digit() {
-                    self.toks
-                        .push(Token::Number(self.ch.to_digit(10).unwrap() as f64))
-                } else {
-                    self.ch_into()
-                }
-            }
-        }
-    }
+
     pub fn lex(&mut self) {
-        self.toks = Vec::<Token>::new();
-        for _ in 0..self.input.len() {
-            if self.idx > self.input.len() {
-                break;
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut idx = 0;
+
+        while idx < chars.len() {
+            let ch = chars[idx];
+            match ch {
+                ' ' | '\t' | '\n' => {
+                    idx += 1; // skip whitespace
+                }
+                '+' => {
+                    self.toks.push(Token::Plus);
+                    idx += 1;
+                }
+                '-' => {
+                    self.toks.push(Token::Minus);
+                    idx += 1;
+                }
+                '*' => {
+                    self.toks.push(Token::Mul);
+                    idx += 1;
+                }
+                '/' => {
+                    self.toks.push(Token::Div);
+                    idx += 1;
+                }
+                '(' => {
+                    self.toks.push(Token::OBrkt);
+                    idx += 1;
+                }
+                ')' => {
+                    self.toks.push(Token::CBrkt);
+                    idx += 1;
+                }
+                '0'..='9' => {
+                    let mut buf = String::new();
+                    while idx < chars.len() && (chars[idx].is_ascii_digit() || chars[idx] == '.') {
+                        buf.push(chars[idx]);
+                        idx += 1;
+                    }
+                    let num = buf.parse::<f64>().unwrap();
+                    self.toks.push(Token::Number(num));
+                }
+                _ => panic!("Invalid character '{}' at position {}", ch, idx),
             }
-            self.ch_into();
         }
     }
 }

@@ -4,22 +4,16 @@ mod parser;
 use gtk::{Application, ApplicationWindow, Button, Grid, Label};
 use gtk::{Box as GBox, prelude::*};
 use lexer::Lexer;
-use parser;
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::rc::Rc;
 
-fn compute(input: String) -> f64 {
+fn compute(input: String) -> Result<f64, parser::ParseError> {
     let mut lx = Lexer::from_string(input);
     lx.lex();
     let toks = lx.toks;
-    // let mut prsr = parser::Eqt::from_toks(toks);
-    // prsr.parse();
-    // let eqt = prsr.eqt;
-    // if let Some(val) = eqt.value {
-    //     return val;
-    // }
-    // TODO: Implement proper computation parsing, I'm going outside for now
-    return 0 as f64;
+    let mut prsr = parser::Parser::from_toks(toks);
+    return prsr.eval();
 }
 
 fn main() {
@@ -74,7 +68,7 @@ fn main() {
                 // Clone Rc for this button
                 let input_clone = Rc::clone(&input);
                 let out_label_clone = Rc::clone(&out_label);
-                let mut eql = Rc::new(RefCell::new(false));
+                let eql = Rc::new(RefCell::new(false));
                 let eql_clone = Rc::clone(&eql);
                 button.connect_clicked(move |_| {
                     let mut inp = input_clone.borrow_mut();
@@ -85,7 +79,17 @@ fn main() {
                         "=" => {
                             *eql = true;
                             let res = compute(inp.clone());
-                            inpl.set_text(format!("{}={}", inp.as_str(), res).as_str());
+                            inpl.set_text(
+                                format!(
+                                    "{}={}",
+                                    inp.as_str(),
+                                    match res {
+                                        Ok(v) => v.to_string(),
+                                        Err(e) => format!("{e}"),
+                                    }
+                                )
+                                .as_str(),
+                            );
                         }
                         _ => inp.push_str(label),
                     }

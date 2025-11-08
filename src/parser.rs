@@ -1,225 +1,232 @@
 use crate::lexer::Token;
+use std::fmt::{Display, Formatter};
 
-#[derive(Clone, Eq, PartialEq)]
-pub enum Oper {
-    Plus,
-    Minus,
-    Mul,
-    Div,
+#[derive(Debug, Clone)]
+pub enum ParseError {
+    InvalidToken(usize),
+    UnclosedBracket(usize),
+    UnexpectedEndOfInput(usize),
 }
 
-#[derive(Clone)]
-pub enum Number {
-    Int(u32, bool),
-    Float(f64, bool),
-}
-
-impl Number {
-    pub fn true_number(&self) -> f64 {
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Number::Int(i, positive) => (*i as f64) * if *positive { 1.0 } else { -1.0 },
-            Number::Float(f, positive) => *f * if *positive { 1.0 } else { -1.0 },
+            ParseError::InvalidToken(pos) => write!(f, "Invalid token at position {}", pos),
+            ParseError::UnclosedBracket(pos) => write!(f, "Unclosed bracket at position {}", pos),
+            ParseError::UnexpectedEndOfInput(pos) => {
+                write!(f, "Expected Token after {} but found end of input", pos)
+            }
         }
     }
 }
 
-#[derive(Clone)]
-pub struct Brkt {
-    pub items: Vec<EqItem>,
+#[derive(Debug, Clone)]
+pub enum ParseNode {
+    Number(f64),
+    Operator(char),
+    Bracket(Vec<ParseNode>),
 }
 
-#[derive(Clone, Default)]
-pub enum EqItem {
-    #[default]
-    None,
-    Number(Number),
-    Brkt(Brkt),
-}
-
-#[derive(Default)]
-pub struct EqPart {
-    before: Option<Oper>,
-    item: EqItem,
-    after: Option<Oper>,
-}
-pub struct Eqt {
-    parts: Vec<EqPart>,
-    value: Option<f64>,
-}
-
-impl EqItem {
-    pub fn true_number(&self) -> f64 {
-        match self {
-            EqItem::Number(n) => n.true_number(),
-            _ => 0.0,
+impl ParseNode {
+    pub fn from_token(tok: &Token, pos: &usize) -> Result<Self, ParseError> {
+        match tok {
+            Token::Number(n) => Ok(ParseNode::Number(*n)),
+            Token::Plus => Ok(ParseNode::Operator('+')),
+            Token::Minus => Ok(ParseNode::Operator('-')),
+            Token::Mul => Ok(ParseNode::Operator('*')),
+            Token::Div => Ok(ParseNode::Operator('/')),
+            _ => Err(ParseError::InvalidToken(*pos)),
         }
     }
-    pub fn numberfy(&mut self) {
-        match self {
-            EqItem::Brkt(b) => {
-                let mut new = EqItem::Number(Number::Int(0, true));
-                let mut nw = 0.0;
-                for num in b.items.iter_mut() {
-                    num.numberfy();
-                    nw += if let EqItem::Number(nm) = num {
-                        nm.true_number()
-                    } else if let EqItem::Brkt(bk) = num {
-                        num.clone().numberfy();
-                        num.true_number()
-                    } else {
-                        panic!("Unreachable"); // I'm stoopid and I'm too lazy to refactor properly
-                        0.0
+}
+
+pub struct Parser {
+    pub toks: Vec<Token>,
+    pub pos: usize,
+    pub result: Option<f64>,
+    complete: bool,
+    buf: Vec<ParseNode>,
+}
+
+impl Parser {
+    pub fn from_toks(toks: Vec<Token>) -> Self {
+        println!("[PARSER_DEBUG] Original tokens: {:?}", toks);
+        Parser {
+            toks,
+            pos: 0,
+            result: None,
+            buf: Vec::new(),
+            complete: false,
+        }
+    }
+
+    pub fn from_nodes(nodes: Vec<ParseNode>) -> Self {
+        let toks = nodes
+            .iter()
+            .map(|node| match node {
+                ParseNode::Number(n) => Token::Number(*n),
+                ParseNode::Operator(op) => match op {
+                    '+' => Token::Plus,
+                    '-' => Token::Minus,
+                    '*' => Token::Mul,
+                    '/' => Token::Div,
+                    _ => panic!("Invalid operator"),
+                },
+                ParseNode::Bracket(_) => panic!("Cannot convert Bracket to Token directly"),
+            })
+            .collect();
+        Parser::from_toks(toks)
+    }
+
+    pub fn eval(&mut self) -> Result<f64, ParseError> {
+        self.result = Some(self.parse_expression()?);
+        Ok(self.result.unwrap())
+    }
+
+    fn parse_expression(&mut self) -> Result<f64, ParseError> {
+        println!(
+            "[PARSER_DEBUG] Starting parse_expression with {} tokens",
+            self.toks.len()
+        );
+        self.buf.clear();
+
+        while self.pos < self.toks.len() {
+            println!(
+                "[PARSER_DEBUG] Parsing token at pos {}: {:?}",
+                self.pos, self.toks[self.pos]
+            );
+            self.next()?;
+        }
+
+        println!("[PARSER_DEBUG] Initial buffer: {:?}", self.buf);
+
+        // Unwrap brackets
+        self.buf
+            .iter_mut()
+            .try_for_each(|node| -> Result<(), ParseError> {
+                if let ParseNode::Bracket(contents) = node {
+                    println!("[PARSER_DEBUG] Evaluating bracket at node: {:?}", contents);
+                    let mut sub_parser = Parser::from_nodes(contents.clone());
+                    let val = sub_parser.eval()?;
+                    println!("[PARSER_DEBUG] Bracket value: {}", val);
+                    *node = ParseNode::Number(val);
+                }
+                Ok(())
+            })?;
+
+        println!("[PARSER_DEBUG] Buffer after brackets: {:?}", self.buf);
+
+        // Multiplication and division
+        let mut i = 0;
+        while i < self.buf.len() {
+            if let ParseNode::Operator(op) = &self.buf[i] {
+                if *op == '*' || *op == '/' {
+                    if i == 0 || i + 1 >= self.buf.len() {
+                        return Err(ParseError::UnexpectedEndOfInput(i));
+                    }
+                    let left = match self.buf[i - 1] {
+                        ParseNode::Number(n) => n,
+                        _ => return Err(ParseError::InvalidToken(i - 1)),
                     };
+                    let right = match self.buf[i + 1] {
+                        ParseNode::Number(n) => n,
+                        _ => return Err(ParseError::InvalidToken(i + 1)),
+                    };
+                    let result = if *op == '*' {
+                        left * right
+                    } else {
+                        left / right
+                    };
+                    println!("[PARSER_DEBUG] {} {} {} = {}", left, op, right, result);
+                    self.buf.splice(i - 1..=i + 1, [ParseNode::Number(result)]);
+                    i = i.saturating_sub(1);
                 }
-                new = EqItem::Number(if nw % 1.0 == 0.0 {
-                    Number::Int(nw as u32, true)
-                } else {
-                    Number::Float(nw, true)
-                });
-                *self = new;
             }
-            EqItem::Number(n) => *self = EqItem::Number(n.clone()),
-            _ => panic!("Unreachable"), // perfecto, don't judge
+            i += 1;
         }
-    }
-}
 
-impl EqPart {
-    pub fn new(toks: Vec<Token>) -> Self {
-        if (toks.len() > 3 || toks.len() == 0) {
-            panic!("Invalid tokenized equation part");
-            return Self::default();
-        } else {
-            let before = match toks.get(0) {
-                Some(Token::Plus) => Some(Oper::Plus),
-                Some(Token::Minus) => Some(Oper::Minus),
-                _ => None,
-            };
-            let after = match toks.get(toks.len() - 1) {
-                Some(Token::Plus) => Some(Oper::Plus),
-                Some(Token::Minus) => Some(Oper::Minus),
-                Some(Token::Mul) => Some(Oper::Mul),
-                Some(Token::Div) => Some(Oper::Div),
-                _ => None,
-            };
-            let item_tok = if before.is_some() && after.is_some() {
-                &toks[1]
-            } else if before.is_some() || after.is_some() {
-                &toks[1.min(toks.len() - 1)]
-            } else {
-                &toks[0]
-            };
-            let item = match item_tok {
-                Token::Number(n) => EqItem::Number(if n % 1.0 == 0.0 {
-                    Number::Int(*n as u32, *n >= 0.0)
-                } else {
-                    Number::Float(*n, *n >= 0.0)
-                }),
-                _ => EqItem::default(),
-            };
-            Self {
-                before,
-                item,
-                after,
-            }
-        }
-    }
-    pub fn truefy(&mut self) {
-        self.item.numberfy();
-        let positive = match &self.before {
-            Some(Oper::Minus) => {
-                self.before = None;
-                false
-            }
-            _ => true,
-        };
-        let num = self.item.true_number();
-        self.item = EqItem::Number(if num % 1.0 == 0.0 {
-            Number::Int(num.abs() as u32, positive)
-        } else {
-            Number::Float(num.abs(), positive)
-        });
-    }
-    pub fn clone(&self) -> Self {
-        Self {
-            before: match &self.before {
-                Some(v) => Some(v.clone()),
-                None => None,
-            },
-            item: self.item.clone(),
-            after: match &self.after {
-                Some(v) => Some(v.clone()),
-                None => None,
-            },
-        }
-    }
-    pub fn calc(&self, oper: Oper, other: &EqPart) -> Self {
-        let mut new_part = self.clone();
-        let num1 = self.item.true_number();
-        let num2 = other.item.true_number();
-        let result = match oper {
-            Oper::Mul => num1 * num2,
-            Oper::Div => num1 / num2,
-            _ => panic!("Unsupported operation in calc"),
-        };
-        new_part.item = EqItem::Number(if result % 1.0 == 0.0 {
-            Number::Int(result as u32, result >= 0.0)
-        } else {
-            Number::Float(result, result >= 0.0)
-        });
-        new_part.after = other.after.clone();
-        new_part
-    }
-}
+        println!("[PARSER_DEBUG] Buffer after mul/div: {:?}", self.buf);
 
-impl Eqt {
-    pub fn new(parts: Vec<EqPart>) -> Self {
-        Self { parts, value: None }
-    }
-
-    pub fn pre_steps(&mut self) {
-        let mut new_parts: Vec<EqPart> = Vec::new();
-        for i in 0..self.parts.len() {
-            let part = &self.parts[i];
-            if let Some(v) = &part.after {
-                if !(*v == Oper::Mul || *v == Oper::Div) {
-                    new_parts.push(part.clone());
-                    continue;
-                } else {
+        // Addition and subtraction
+        let mut i = 0;
+        while self.buf.len() > 1 {
+            while i < self.buf.len() {
+                if let ParseNode::Operator(op) = &self.buf[i] {
+                    if *op == '+' || *op == '-' {
+                        if i == 0 || i + 1 >= self.buf.len() {
+                            return Err(ParseError::UnexpectedEndOfInput(i));
+                        }
+                        let left = match self.buf[i - 1] {
+                            ParseNode::Number(n) => n,
+                            _ => return Err(ParseError::InvalidToken(i - 1)),
+                        };
+                        let right = match self.buf[i + 1] {
+                            ParseNode::Number(n) => n,
+                            _ => return Err(ParseError::InvalidToken(i + 1)),
+                        };
+                        let result = if *op == '+' {
+                            left + right
+                        } else {
+                            left - right
+                        };
+                        println!("[PARSER_DEBUG] {} {} {} = {}", left, op, right, result);
+                        self.buf.splice(i - 1..=i + 1, [ParseNode::Number(result)]);
+                        i = i.saturating_sub(1);
+                    }
                 }
-                if i + 1 > self.parts.len() - 1 {
-                    panic!("Cannot do an operation without a following part");
-                }
-                new_parts.push(part.clone().calc(v.clone(), &self.parts[i + 1].clone()));
-            } else {
-                new_parts.push(part.clone());
+                i += 1;
             }
+            if self.buf.len() <= 1 {
+                break;
+            }
+            i = 0;
         }
-        self.parts = new_parts;
+
+        println!("[PARSER_DEBUG] Final buffer: {:?}", self.buf);
+
+        if let Some(ParseNode::Number(n)) = self.buf.get(0) {
+            println!("[PARSER_DEBUG] Final result: {}", n);
+            return Ok(*n);
+        }
+
+        Err(ParseError::InvalidToken(self.pos))
     }
 
-    pub fn eval(&mut self) -> f64 {
-        self.pre_steps();
-        let mut result = 0.0;
-        let mut last: EqPart = EqPart::default();
-        let mut first = true;
-        for part in self.parts.iter_mut() {
-            part.item.numberfy();
-            part.truefy();
-            let num = part.item.true_number();
-            result += num;
-            if first {
-                first = false;
-                last = part.clone();
-                continue;
+    fn next(&mut self) -> Result<(), ParseError> {
+        println!(
+            "[PARSER_DEBUG] Current pos: {}, token: {:?}",
+            self.pos,
+            self.toks.get(self.pos)
+        );
+        match &self.toks[self.pos] {
+            Token::Number(n) => {
+                self.buf.push(ParseNode::Number(*n));
+                self.pos += 1;
             }
-            match part.after {
-                Some(Oper::Plus) => result += num,
-                Some(Oper::Minus) => result -= num,
-                _ => panic!("Unsupported operation in evaluation"),
+            Token::OBrkt => {
+                self.pos += 1; // Skip '('
+                let mut contents = Vec::<ParseNode>::new();
+                while &self.toks[self.pos] != &Token::CBrkt {
+                    if self.pos >= self.toks.len() {
+                        // Prevent out-of-bounds
+                        return Err(ParseError::UnclosedBracket(self.pos));
+                    }
+                    contents.push(ParseNode::from_token(&self.toks[self.pos], &self.pos)?);
+                    self.pos += 1;
+                }
+                self.buf.push(ParseNode::Bracket(contents));
+            }
+            Token::CBrkt => {
+                // Should not happen here
+                self.pos += 1;
+            }
+            Token::Plus | Token::Minus | Token::Mul | Token::Div => {
+                let op_node = ParseNode::from_token(&self.toks[self.pos], &self.pos)?;
+                self.buf.push(op_node);
+                self.pos += 1;
             }
         }
-        self.value = Some(result);
-        result
+        self.complete = true;
+        Ok(())
     }
 }
