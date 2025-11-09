@@ -116,6 +116,35 @@ impl Parser {
 
         println!("[PARSER_DEBUG] Buffer after brackets: {:?}", self.buf);
 
+        for i in 0..self.buf.len() {
+            println!("[PARSER_DEBUG] combining separated numbers");
+            if i + 1 >= self.buf.len() {
+                continue;
+            }
+            let nc1 = match self.buf.get(i) {
+                Some(v) => v,
+                None => {
+                    println!("bad luck with idx {}", i);
+                    continue;
+                }
+            };
+            let nc2 = match self.buf.get(i + 1) {
+                Some(v) => v,
+                None => {
+                    println!("bad luck with idx {} (added 1)", i + 1);
+                    continue;
+                }
+            };
+            if let ParseNode::Number(n1) = nc1 {
+                if let ParseNode::Number(n2) = nc2 {
+                    println!("combining {:?} and {:?}", n1, n2);
+                    self.buf[i] = ParseNode::Number(n2*n1);
+                    self.buf.remove(i+1);
+                }
+            }
+            println!("[PARSER_DEBUG] numbers combined '{:?}'", self.buf);
+        }
+
         // Multiplication and division
         let mut i = 0;
         while i < self.buf.len() {
@@ -142,6 +171,7 @@ impl Parser {
                     i = i.saturating_sub(1);
                 }
             }
+
             i += 1;
         }
 
