@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-glib = "0.21.4"
-gtk = "0.18.2"
-num = "0.4.3"
+iced = "0.13.1"
+
+# Optimization for faster builds
+[profile.dev]
+incremental = true
+
+[profile.dev.package."*"]
+opt-level = 1

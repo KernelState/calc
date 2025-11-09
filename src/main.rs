@@ -1,136 +1,270 @@
 mod lexer;
 mod parser;
 
-use gtk::{Application, ApplicationWindow, Button, CssProvider, Grid, Label, StyleContext};
-use gtk::{Box as GBox, gdk::Screen as GScreen, prelude::*};
+use iced::Alignment::Center;
+use iced::widget::{Container, button, column, container, row, scrollable, text, text_input};
+use iced::{Element, Length, Theme};
 use lexer::Lexer;
-use std::cell::RefCell;
-use std::rc::Rc;
+use parser::Parser;
 
-fn compute(input: String) -> Result<f64, parser::ParseError> {
-    let mut lx = Lexer::from_string(input);
-    lx.lex();
-    let toks = lx.toks;
-    let mut prsr = parser::Parser::from_toks(toks);
-    return prsr.eval();
+fn main() -> iced::Result {
+    iced::application("TESTING", App::update, App::view) // You can do it without the TESTING title
+        // I just do it because of my hyprland setup window rules
+        .theme(App::theme)
+        .window(iced::window::Settings {
+            size: iced::Size {
+                width: 350 as f32,
+                height: 440 as f32, // Pixels are dumb
+            },
+            resizable: false,
+            decorations: true,
+            transparent: false,
+            ..Default::default()
+        })
+        .settings(iced::Settings {
+            id: Some("testing.kernelstate.org".to_string()),
+            antialiasing: true,
+            ..Default::default()
+        })
+        .run()
 }
 
-fn main() {
-    let app = Application::builder()
-        .application_id("org.example.calculator")
-        .build();
+#[derive(Debug, Clone)]
+enum Message {
+    InputChanged(String),
+    AddInput(char),
+    DeleteLast,
+    ClearInput,
+    Evaluate,
+}
 
-    app.connect_activate(|app| {
-        let css_provider = CssProvider::new();
-        css_provider.load_from_path("style.css").unwrap();
-        // Shared input
-        let input = Rc::new(RefCell::new(String::new()));
+#[derive(Default)]
+struct App {
+    input_value: String,
+    output_value: String,
+    error_message: Option<String>,
+}
 
-        // Create window
-        let window = ApplicationWindow::builder()
-            .application(app)
-            .default_width(300)
-            .default_height(400)
-            .title("TESTING")
-            .resizable(false)
-            .build();
+impl App {
+    fn update(&mut self, message: Message) {
+        if self.input_value.is_empty() {
+            self.output_value = "0".to_string();
+            self.error_message = None;
+        }
+        match message {
+            Message::InputChanged(value) => {
+                self.input_value = value;
+            }
+            Message::AddInput(c) => {
+                self.input_value.push(c);
+            }
+            Message::ClearInput => {
+                self.input_value.clear();
+            }
+            Message::DeleteLast => {
+                self.input_value.pop();
+            }
+            Message::Evaluate => {
+                let mut lexer = Lexer::from_string(self.input_value.clone());
+                lexer.lex();
 
-        let contents = GBox::new(gtk::Orientation::Vertical, 10);
+                let mut parser = Parser::from_toks(lexer.toks.clone());
+                match parser.eval() {
+                    Ok(result) => {
+                        self.output_value = result.to_string();
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Error: {}", e));
+                    }
+                }
+            }
+            _ => panic!("Not implemented yet"),
+        }
+    }
 
-        let inp_ = Rc::clone(&input);
-        let input_val = inp_.borrow();
-        let out_label = Rc::new(RefCell::new(Label::new(Some(input_val.as_str()))));
-        let lbl = Rc::clone(&out_label);
-        let out = lbl.borrow();
-        contents.pack_start(&out as &Label, true, false, 20);
+    fn view(&self) -> Element<'_, Message> {
+        let input = text_input("Try 9*3!", &self.input_value)
+            .on_input(Message::InputChanged)
+            .padding(10)
+            .size(20);
+        let result: text::Text = match &self.error_message {
+            None => text(&self.output_value)
+                .size(20)
+                .style(text_style_secondary),
+            Some(err) => text(err.clone()).size(15).style(text_style_danger),
+        };
 
-        // Grid layout
-        let grid = Grid::new();
-        grid.set_row_spacing(10);
-        grid.set_column_spacing(10);
+        let content = column![column![input, result].spacing(10), self.number_grid()]
+            .spacing(20)
+            .padding(20);
 
-        contents.pack_start(&grid, true, true, 10);
+        container(scrollable(content))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
 
-        // Set grid as window's child
-        window.add(&contents);
-
-        // Button labels (rows)
-        let labels = vec![
-            vec!["(", ")", "%", "AC"],
-            vec!["7", "8", "9", "*"],
-            vec!["4", "5", "6", "/"],
-            vec!["1", "2", "3", "+"],
-            vec!["0", ".", "=", "-"],
+    fn number_grid(&self) -> Container<'_, Message> {
+        let nums = [
+            ["7", "8", "9", "/", "C"],
+            ["4", "5", "6", "*", "D"],
+            ["1", "2", "3", "-", "("],
+            ["0", ".", "=", "+", ")"],
         ];
 
-        for (row_idx, row) in labels.iter().enumerate() {
-            for (col_idx, &label) in row.iter().enumerate() {
-                let button = Button::with_label(label);
+        let mut grid = column![];
 
-                if (label == "%") {
-                    button.set_sensitive(false);
-                }
-
-                let button_sc = button.style_context();
-
-                match label {
-                    "AC" => button_sc.add_class("clear"),
-                    "=" => button.set_widget_name("equal"),
-                    "+" | "-" | "*" | "/" | "%" => button_sc.add_class("operator"),
-                    "%" => button_sc.add_class("disabled"),
-                    _ => button_sc.add_class("normal"),
-                }
-
-                if let Some(screen) = GScreen::default() {
-                    StyleContext::add_provider_for_screen(
-                        &screen,
-                        &css_provider,
-                        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-                    );
-                }
-
-                // Clone Rc for this button
-                let input_clone = Rc::clone(&input);
-                let out_label_clone = Rc::clone(&out_label);
-                let eql = Rc::new(RefCell::new(false));
-                let eql_clone = Rc::clone(&eql);
-                button.connect_clicked(move |_| {
-                    let mut inp = input_clone.borrow_mut();
-                    let inpl = out_label_clone.borrow_mut();
-                    let mut eql = eql_clone.borrow_mut();
-                    match label {
-                        "AC" => inp.clear(),
-                        "=" => {
-                            *eql = true;
-                            let res = compute(inp.clone());
-                            inpl.set_text(
-                                format!(
-                                    "{}={}",
-                                    inp.as_str(),
-                                    match res {
-                                        Ok(v) => v.to_string(),
-                                        Err(e) => format!("{e}"),
-                                    }
-                                )
-                                .as_str(),
-                            );
-                        }
-                        _ => inp.push_str(label),
+        for row in nums {
+            let mut row_elements = row![];
+            for col in row {
+                let mut button_element = button(text(col).size(24).align_x(Center).align_y(Center))
+                    .padding(15)
+                    .width(Length::Fill);
+                match col {
+                    "C" => {
+                        button_element = button_element
+                            .on_press(Message::ClearInput)
+                            .style(danger_button_style);
                     }
-                    println!("[CALC_DEBUG] Current input: {}", *inp);
-                    if !*eql {
-                        inpl.set_text(inp.as_str());
-                    } else {
-                        *eql = false;
+                    "D" => {
+                        button_element = button_element
+                            .on_press(Message::DeleteLast)
+                            .style(main_button_style);
                     }
-                });
-
-                grid.attach(&button, col_idx as i32, row_idx as i32, 1, 1);
+                    "=" => {
+                        button_element = button_element
+                            .on_press(Message::Evaluate)
+                            .style(main_button_style);
+                    }
+                    _ => {
+                        button_element = button_element
+                            .on_press(Message::AddInput(col.to_string().chars().nth(0).unwrap()))
+                            .style(normal_button_style);
+                    }
+                };
+                row_elements = row_elements.push(button_element);
             }
+            grid = grid.push(row_elements.spacing(10));
         }
 
-        window.show_all();
-    });
+        container(grid.spacing(10))
+    }
 
-    app.run();
+    fn theme(&self) -> Theme {
+        Theme::Dark
+    }
+}
+
+fn main_button_style(theme: &Theme, state: button::Status) -> button::Style {
+    let palette = theme.palette();
+    match state {
+        button::Status::Pressed => button::Style {
+            background: Some(palette.primary.into()),
+            text_color: palette.text,
+            border: iced::Border {
+                color: palette.text,
+                width: 0 as f32,
+                radius: iced::border::Radius::from(8),
+            },
+            ..Default::default()
+        },
+        _ => button::Style {
+            background: Some(palette.primary.into()),
+            text_color: palette.text,
+            border: iced::Border {
+                color: palette.text,
+                width: 0 as f32,
+                radius: iced::border::Radius::from(8),
+            },
+            ..Default::default()
+        },
+    }
+}
+
+fn danger_button_style(theme: &Theme, state: button::Status) -> button::Style {
+    let palette = theme.palette();
+    match state {
+        button::Status::Pressed => button::Style {
+            background: Some(palette.danger.into()),
+            text_color: palette.text,
+            border: iced::Border {
+                color: palette.text,
+                width: 0 as f32,
+                radius: iced::border::Radius::from(8),
+            },
+            ..Default::default()
+        },
+        _ => button::Style {
+            background: Some(palette.danger.into()),
+            text_color: palette.text,
+            border: iced::Border {
+                color: palette.text,
+                width: 0 as f32,
+                radius: iced::border::Radius::from(8),
+            },
+            ..Default::default()
+        },
+    }
+}
+
+fn normal_button_style(theme: &Theme, state: button::Status) -> button::Style {
+    let palette = theme.palette();
+    let base_light = lighten_color(palette.background.clone(), 0.1);
+    let base_light2 = lighten_color(palette.background.clone(), 0.2);
+    match state {
+        button::Status::Pressed => button::Style {
+            background: Some(base_light.into()),
+            text_color: palette.text,
+            border: iced::Border {
+                color: palette.text,
+                width: 0 as f32,
+                radius: iced::border::Radius::from(8),
+            },
+            ..Default::default()
+        },
+        _ => button::Style {
+            background: Some(base_light2.into()),
+            text_color: palette.text,
+            border: iced::Border {
+                color: palette.text,
+                width: 0 as f32,
+                radius: iced::border::Radius::from(8),
+            },
+            ..Default::default()
+        },
+    }
+}
+
+fn text_style_secondary(theme: &Theme) -> text::Style {
+    let palette = theme.palette();
+    text::Style {
+        color: Some(darken_color(palette.text, 0.2)),
+        ..Default::default()
+    }
+}
+
+fn text_style_danger(theme: &Theme) -> text::Style {
+    let palette = theme.palette();
+    text::Style {
+        color: Some(palette.danger),
+        ..Default::default()
+    }
+}
+
+fn lighten_color(color: iced::Color, amount: f32) -> iced::Color {
+    iced::Color {
+        r: (color.r + amount).min(1.0),
+        g: (color.g + amount).min(1.0),
+        b: (color.b + amount).min(1.0),
+        a: color.a,
+    }
+}
+
+fn darken_color(color: iced::Color, amount: f32) -> iced::Color {
+    iced::Color {
+        r: (color.r - amount).max(0.0),
+        g: (color.g - amount).max(0.0),
+        b: (color.b - amount).max(0.0),
+        a: color.a,
+    }
 }
