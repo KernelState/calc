@@ -23,7 +23,7 @@ impl Lexer {
         }
     }
 
-    pub fn lex(&mut self) {
+    pub fn lex(&mut self) -> Result<(), String> {
         let chars: Vec<char> = self.input.chars().collect();
         let mut idx = 0;
 
@@ -66,8 +66,10 @@ impl Lexer {
                     let num = buf.parse::<f64>().unwrap();
                     self.toks.push(Token::Number(num));
                 }
-                _ => panic!("Invalid character '{}' at position {}", ch, idx),
+                _ => return Err(format!("Invalid character '{}' at position {}", ch, idx)),
             }
         }
+
+        return Ok(());
     }
 }

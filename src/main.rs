@@ -66,7 +66,10 @@ impl App {
             }
             Message::Evaluate => {
                 let mut lexer = Lexer::from_string(self.input_value.clone());
-                lexer.lex();
+                match lexer.lex() {
+                    Err(e) => self.error_message = Some(e),
+                    Ok(_) => {}
+                };
 
                 let mut parser = Parser::from_toks(lexer.toks.clone());
                 match parser.eval() {
@@ -78,7 +81,6 @@ impl App {
                     }
                 }
             }
-            _ => panic!("Not implemented yet"),
         }
     }
 

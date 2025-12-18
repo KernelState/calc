@@ -138,8 +138,8 @@ impl Parser {
             if let ParseNode::Number(n1) = nc1 {
                 if let ParseNode::Number(n2) = nc2 {
                     println!("combining {:?} and {:?}", n1, n2);
-                    self.buf[i] = ParseNode::Number(n2*n1);
-                    self.buf.remove(i+1);
+                    self.buf[i] = ParseNode::Number(n2 * n1);
+                    self.buf.remove(i + 1);
                 }
             }
             println!("[PARSER_DEBUG] numbers combined '{:?}'", self.buf);
